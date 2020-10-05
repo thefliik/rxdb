@@ -1,14 +1,11 @@
-import {
-    Injectable,
-    isDevMode
-} from '@angular/core';
+import { Injectable, isDevMode } from '@angular/core';
 
 // import typings
 import {
     RxHeroDocument,
     RxHeroesDatabase,
     RxHeroesCollections,
-    RxHeroDocumentType
+    RxHeroDocumentType,
 } from './../RxDB.d';
 
 import heroSchema from '../schemas/hero.schema';
@@ -19,15 +16,10 @@ import heroSchema from '../schemas/hero.schema';
  * only the modules that we need.
  * A default import would be: import RxDB from 'rxdb';
  */
-import {
-    createRxDatabase,
-    addRxPlugin
-} from 'rxdb/plugins/core';
+import { createRxDatabase, addRxPlugin } from 'rxdb/plugins/core';
 import { RxDBNoValidatePlugin } from 'rxdb/plugins/no-validate';
 import { RxDBLeaderElectionPlugin } from 'rxdb/plugins/leader-election';
-import { RxDBReplicationPlugin } from 'rxdb/plugins/replication';
-import * as PouchdbAdapterHttp from 'pouchdb-adapter-http';
-import * as PouchdbAdapterIdb from 'pouchdb-adapter-idb';
+import * as PouchdbAdapterMemory from 'pouchdb-adapter-memory';
 
 let collections = [
     {
@@ -35,33 +27,20 @@ let collections = [
         schema: heroSchema,
         methods: {
             hpPercent(this: RxHeroDocument): number {
-                return this.hp / this.maxHP * 100;
-            }
+                return (this.hp / this.maxHP) * 100;
+            },
         },
-        sync: true
-    }
+        sync: true,
+    },
 ];
 
-console.log('hostname: ' + window.location.hostname);
-const syncURL = 'http://' + window.location.hostname + ':10101/';
-
-let doSync = true;
-if (window.location.hash == '#nosync') doSync = false;
-
-
 async function loadRxDBPlugins(): Promise<any> {
-
-
     addRxPlugin(RxDBLeaderElectionPlugin);
 
-    addRxPlugin(RxDBReplicationPlugin);
-    // http-adapter is always needed for replication with the node-server
-    addRxPlugin(PouchdbAdapterHttp);
-
     /**
-     * indexed-db adapter
+     * memory adapter
      */
-    addRxPlugin(PouchdbAdapterIdb);
+    addRxPlugin(PouchdbAdapterMemory);
 
     /**
      * to reduce the build-size,
@@ -69,53 +48,49 @@ async function loadRxDBPlugins(): Promise<any> {
      */
     if (isDevMode()) {
         await Promise.all([
-
             // add dev-mode plugin
             // which does many checks and add full error-messages
-            import('rxdb/plugins/dev-mode').then(
-                module => addRxPlugin(module)
+            import('rxdb/plugins/dev-mode').then((module) =>
+                addRxPlugin(module)
             ),
 
             // we use the schema-validation only in dev-mode
             // this validates each document if it is matching the jsonschema
-            import('rxdb/plugins/validate').then(
-                module => addRxPlugin(module)
-            )
+            import('rxdb/plugins/validate').then((module) =>
+                addRxPlugin(module)
+            ),
         ]);
     } else {
         // in production we use the no-validate module instead of the schema-validation
         // to reduce the build-size
         addRxPlugin(RxDBNoValidatePlugin);
     }
-
 }
 
 /**
  * creates the database
  */
 async function _create(): Promise<RxHeroesDatabase> {
-
     await loadRxDBPlugins();
 
     console.log('DatabaseService: creating database..');
     const db = await createRxDatabase<RxHeroesCollections>({
         name: 'angularheroes',
-        adapter: 'idb'
+        adapter: 'memory',
         // password: 'myLongAndStupidPassword' // no password needed
     });
     console.log('DatabaseService: created database');
     (window as any)['db'] = db; // write to window for debugging
 
     // show leadership in title
-    db.waitForLeadership()
-        .then(() => {
-            console.log('isLeader now');
-            document.title = '♛ ' + document.title;
-        });
+    db.waitForLeadership().then(() => {
+        console.log('isLeader now');
+        document.title = '♛ ' + document.title;
+    });
 
     // create collections
     console.log('DatabaseService: create collections');
-    await Promise.all(collections.map(colData => db.collection(colData)));
+    await Promise.all(collections.map((colData) => db.collection(colData)));
 
     // hooks
     console.log('DatabaseService: add hooks');
@@ -124,8 +99,8 @@ async function _create(): Promise<RxHeroesDatabase> {
         return db.collections.hero
             .findOne({
                 selector: {
-                    color
-                }
+                    color,
+                },
             })
             .exec()
             .then((has: RxHeroDocument | null) => {
@@ -136,14 +111,6 @@ async function _create(): Promise<RxHeroesDatabase> {
                 return db;
             });
     }, false);
-
-    // sync with server
-    if (doSync) {
-        console.log('DatabaseService: sync');
-        await db.hero.sync({
-            remote: syncURL + '/hero'
-        });
-    }
 
     return db;
 }
